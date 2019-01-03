@@ -1,4 +1,4 @@
-const test = require('tape');
+const test = require('ava');
 const sinon = require('sinon');
 const sh = require('shelljs');
 const mockStdIo = require('mock-stdio');
@@ -13,60 +13,55 @@ const cwd = process.cwd();
 const shell = new Shell();
 
 test('run (shell.exec)', async t => {
-  t.equal(await shell.run('echo bar'), 'bar');
-  t.end();
+  t.is(await shell.run('echo bar'), 'bar');
 });
 
-test('run (shelljs command)', async t => {
+test.serial('run (shelljs command)', async t => {
   const stub = sinon.spy(sh, 'pwd');
   await shell.run('!pwd foo');
-  t.equal(stub.callCount, 1);
-  t.equal(stub.firstCall.args[0], 'foo');
+  t.is(stub.callCount, 1);
+  t.is(stub.firstCall.args[0], 'foo');
   stub.restore();
-  t.end();
 });
 
-test('run (dry-run/read-only)', async t => {
+test.serial('run (dry-run/read-only)', async t => {
   const shell = new Shell({ isDryRun: true });
   {
     mockStdIo.start();
     const actual = await shell.run('!pwd');
     const { stdout } = mockStdIo.end();
-    t.equal(actual, cwd);
-    t.ok(/\$ pwd/.test(stdout));
-    t.notOk(/not executed in dry run/.test(stdout));
+    t.is(actual, cwd);
+    t.regex(stdout, /\$ pwd/);
+    t.notRegex(stdout, /not executed in dry run/);
   }
   {
     mockStdIo.start();
     const actual = await shell.run('!pwd', Shell.writes);
     const { stdout } = mockStdIo.end();
-    t.equal(actual, undefined);
-    t.ok(/\$ pwd/.test(stdout));
-    t.ok(/not executed in dry run/.test(stdout));
+    t.is(actual, undefined);
+    t.regex(stdout, /\$ pwd/);
+    t.regex(stdout, /not executed in dry run/);
   }
-  t.end();
 });
 
-test('run (verbose)', async t => {
+test.serial('run (verbose)', async t => {
   const shell = new Shell({ isVerbose: true });
   mockStdIo.start();
   const actual = await shell.run('echo foo');
   const { stdout } = mockStdIo.end();
-  t.equal(stdout, `$ echo foo\nfoo${EOL}`);
-  t.equal(actual, 'foo');
-  t.end();
+  t.is(stdout, `$ echo foo\nfoo${EOL}`);
+  t.is(actual, 'foo');
 });
 
-test('runTemplateCommand', async t => {
+test.serial('runTemplateCommand', async t => {
   const run = cmd => shell.runTemplateCommand(cmd, { verbose: false });
-  t.equal(await run(''), undefined);
-  t.equal(await run('!pwd'), cwd);
-  t.equal(await run('echo ${git.pushRepo}'), 'origin');
-  t.equal(await run('echo -*- ${github.tokenRef} -*-'), '-*- GITHUB_TOKEN -*-');
-  t.end();
+  t.is(await run(''), undefined);
+  t.is(await run('!pwd'), cwd);
+  t.is(await run('echo ${git.pushRepo}'), 'origin');
+  t.is(await run('echo -*- ${github.tokenRef} -*-'), '-*- GITHUB_TOKEN -*-');
 });
 
-test('pushd + popd', async t => {
+test.serial('pushd + popd', async t => {
   sh.dirs('-cq');
   const dir = 'test/resources';
   const outputPush = await shell.pushd(dir);
@@ -75,24 +70,22 @@ test('pushd + popd', async t => {
     .replace(from, '')
     .replace(/^[/|\\\\]/, '')
     .replace(/\\/g, '/');
-  t.equal(diff, dir);
+  t.is(diff, dir);
   const popOutput = await shell.popd();
   const trail = popOutput.split(',');
-  t.equal(trail.length, 1);
-  t.end();
+  t.is(trail.length, 1);
 });
 
-test('copy', async t => {
+test.serial('copy', async t => {
   const source = path.resolve(cwd, 'test/resources');
   const target = path.resolve(cwd, `tmp/${uuid()}`);
   sh.mkdir('-p', target);
   await shell.copy(['file*'], target, { cwd: source });
-  t.equal(await readFile(`${source}/file1`), await readFile(`${target}/file1`));
-  t.equal(await readFile(`${source}/file2`), await readFile(`${target}/file2`));
-  t.end();
+  t.is(await readFile(`${source}/file1`), await readFile(`${target}/file1`));
+  t.is(await readFile(`${source}/file2`), await readFile(`${target}/file2`));
 });
 
-test('bump', async t => {
+test.serial('bump', async t => {
   const target = path.resolve(cwd, `tmp/${uuid()}`);
   sh.mkdir('-p', target);
   const manifestA = path.join(target, 'package.json');
@@ -101,37 +94,33 @@ test('bump', async t => {
   sh.cp('package.json', manifestB);
   await shell.bump(manifestA, '1.0.0');
   const pkg = await readJSON(manifestA);
-  t.equal(pkg.version, '1.0.0');
+  t.is(pkg.version, '1.0.0');
   await shell.bump([manifestA, manifestB], '2.0.0');
   const pkgA = await readJSON(manifestA);
   const pkgB = await readJSON(manifestB);
-  t.equal(pkgA.version, '2.0.0');
-  t.equal(pkgB.version, '2.0.0');
-  t.end();
+  t.is(pkgA.version, '2.0.0');
+  t.is(pkgB.version, '2.0.0');
 });
 
-test('bump (file not found)', async t => {
+test.serial('bump (file not found)', async t => {
   mockStdIo.start();
   await shell.bump('foo.json');
   const { stdout } = mockStdIo.end();
-  t.ok(stdout.includes('Could not bump foo.json'));
-  t.end();
+  t.true(stdout.includes('Could not bump foo.json'));
 });
 
-test('bump (invalid)', async t => {
+test.serial('bump (invalid)', async t => {
   mockStdIo.start();
   await shell.bump('test/resources/file1');
   const { stdout } = mockStdIo.end();
-  t.ok(stdout.includes('Could not bump test/resources/file1'));
-  t.end();
+  t.true(stdout.includes('Could not bump test/resources/file1'));
 });
 
-test('bump (none)', async t => {
+test.serial('bump (none)', async t => {
   mockStdIo.start();
   await shell.bump(false);
   await shell.bump(null);
   await shell.bump([]);
   const { stdout } = mockStdIo.end();
-  t.notOk(stdout.includes('Could not bump'));
-  t.end();
+  t.false(stdout.includes('Could not bump'));
 });
